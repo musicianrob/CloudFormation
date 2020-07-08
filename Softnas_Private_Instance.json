@@ -1,0 +1,611 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "SoftNAS Solo Private Instance",
+
+  "Parameters": {
+
+    "KeyName": {
+      "Description": "The EC2 Key Pair to allow SSH access to the instance",
+      "Type": "String",
+      "Default": ""
+    },
+
+    "MyRegion": {
+      "Description": "The geographic AWS region name where you are deploying",
+      "Type": "String",
+      "Default": ""
+     },
+
+    "NasType" : {
+        "Description" : "NAS EC2 instance size; refer to https://www.ec2instances.info ",
+        "Type" : "String",
+        "Default" : "r5a.2xlarge"
+      },
+
+    "AllowedSG" : {
+        "Description" : "Allowed SecurityGroup for access",
+        "Type" : "String",
+        "Default" : ""
+    },
+
+    "MySubnet1" : {
+      "Description" : "Subnet ID for SoftNAS-01",
+      "Type" : "String",
+      "Default" : ""
+    },
+
+    "SoftnasAMI" : {
+        "Description" : "Description": "AMI-ID: Use the SoftNAS Product AMI for your region",
+        "Type" : "String",
+        "Default" : ""
+    },
+
+    "AlertEmail" : {
+      "Description": "Email address where alerts will be sent",
+      "Type": "String",
+      "Default": ""
+    },
+
+    "Prefix" : {
+      "Description": "Object prefix",
+      "Type": "String",
+      "Default": ""
+    },
+
+    "LicenseCapacity" : {
+      "Description": "The license capacity 1TB, 10TB, 20TB, or 50TB",
+      "Type": "String",
+      "Default": "1TB",
+      "AllowedValues": ["1TB", "10TB", "20TB", "50TB"],
+      "ConstraintDescription": "Must provide a license capacity of 1TB, 10TB, 20TB, or 50TB."
+  },
+
+  "NewIamRole" : {
+      "Description": "Create a new IAM role 'SoftNAS_HA_IAM' for the instance?",
+      "Type": "String",
+      "Default": "yes",
+      "AllowedValues": ["yes", "no"],
+      "ConstraintDescription": "Must specify yes or no, default to yes for web app"
+    }
+  },
+
+  "Conditions": {
+    "CreateIamRole": {"Fn::Equals": [{"Ref": "NewIamRole"}, "yes"] },
+    "Create1TB": {"Fn::Equals": [{"Ref": "LicenseCapacity"}, "1TB"] },
+    "Create10TB": {"Fn::Equals": [{"Ref": "LicenseCapacity"}, "10TB"] },
+    "Create20TB": {"Fn::Equals": [{"Ref": "LicenseCapacity"}, "20TB"] },
+    "Create50TB": {"Fn::Equals": [{"Ref": "LicenseCapacity"}, "50TB"] }
+  },
+
+  "Resources": {
+
+    "IAMRole" : {
+      "Type": "AWS::IAM::Role",
+      "Condition": "CreateIamRole",
+      "Properties" : {
+        "AssumeRolePolicyDocument" : {
+          "Statement" : [
+            {
+              "Effect" : "Allow",
+              "Principal" : {
+                "Service" : [ "ec2.amazonaws.com" ]
+              },
+              "Action" : [ "sts:AssumeRole" ]
+            }
+          ]
+        },
+        "RoleName" : "SoftNAS_HA_IAM",
+        "Path" : "/",
+        "Policies": [ {
+          "PolicyName" : "SoftNAS_HA_IAM",
+          "PolicyDocument" : {
+            "Version" : "2012-10-17",
+            "Statement": [ {
+            "Effect" : "Allow",
+            "Action" : [
+              "aws-marketplace:MeterUsage",
+              "cloudformation:Describe*",
+              "cloudformation:List*",
+              "cloudformation:Get*",
+              "ec2:AttachVolume",
+              "ec2:DisassociateAddress",
+              "ec2:DeleteSnapshot",
+              "ec2:DescribeInstances",
+              "ec2:DescribeAddresses",
+              "ec2:DeleteTags",
+              "ec2:DescribeSnapshots",
+              "ec2:ReplaceRoute",
+              "ec2:DeleteVolume",
+              "ec2:CreateRoute",
+              "ec2:DescribeVolumes",
+              "ec2:CreateSnapshot",
+              "ec2:ModifyInstanceAttribute",
+              "ec2:DescribeRouteTables",
+              "ec2:DetachVolume",
+              "ec2:DescribeTags",
+              "ec2:CreateTags",
+              "ec2:DeleteRoute",
+              "ec2:ModifyNetworkInterfaceAttribute",
+              "ec2:CreateVolume",
+              "ec2:AssociateAddress",
+              "s3:Put*",
+              "s3:Get*",
+              "s3:CreateBucket",
+              "s3:List*",
+              "s3:Delete*"
+              ],
+            "Resource" : "*"
+              } ]
+            }
+        } ]
+      }
+    },
+
+    "SoftnasProfile" : {
+    "Type" : "AWS::IAM::InstanceProfile",
+    "Condition": "CreateIamRole",
+    "DependsOn": "IAMRole",
+    "Properties" : {
+        "InstanceProfileName" : "SoftNAS_HA_IAM",
+        "Path" : "/",
+        "Roles" : [ "SoftNAS_HA_IAM" ]
+      }
+    },
+
+    "Nas1eth0" : {
+      "Type" : "AWS::EC2::NetworkInterface",
+      "Properties" : {
+        "SubnetId" : { "Ref": "MySubnet1" },
+        "Description" :"Nas1 eth0",
+        "GroupSet" : [ { "Ref": "AllowedSG" } ],
+        "SourceDestCheck" : "false",
+        "Tags" : [ {"Key" : "Name",
+          "Value" : { "Fn::Join" : ["-",[ {"Ref": "Prefix"}, "01", "eth0" ] ] }
+          } ]
+      }
+    },
+
+    "NAS1TB" : {
+      "Type" : "AWS::EC2::Instance",
+      "Condition": "Create1TB",
+      "Properties" : {
+        "InstanceType" : { "Ref" : "NasType" },
+        "KeyName" : { "Ref": "KeyName" },
+        "ImageId" : { "Ref": "SoftnasAMI" },
+        "EbsOptimized" : "true",
+        "IamInstanceProfile": "SoftNAS_HA_IAM",
+        "DisableApiTermination": "false",
+        "NetworkInterfaces" : [ { "NetworkInterfaceId" : {"Ref" : "Nas1eth0"}, "DeviceIndex" : "0" } ],
+        "Tags" : [
+          { "Key" : "Name",
+          "Value" : { "Fn::Join" : ["-",[ {"Ref": "Prefix"}, "01" ] ] } },
+          { "Key" : "Status", "Value" : "Configuration in progress" }
+        ],
+        "BlockDeviceMappings":[
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": { "VolumeSize": "100", "VolumeType": "gp2" }
+        }
+        ],
+        "UserData": {
+                    "Fn::Base64": { "Fn::Join": ["", [
+                        "#cloud-config\n",
+                        "hostname: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                        "fqdn: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                        "manage_etc_hosts: false\n",
+                        "runcmd:\n",
+                        "  - echo 'export HOSTNAME=",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"' >> /root/.bash_profile\n",
+                        "  - sed -i -e 's/admin@example.com/",{"Ref": "AlertEmail"},"/g' /var/www/softnas/config/monitoring.ini\n",
+                        "  - cp -a /var/www/softnas/config/general_settings.ini.prototype /var/www/softnas/config/general_settings.ini\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service monit restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service nginx restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service php-fpm restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service sshd restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service softnas restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - ID=`/usr/bin/curl http://169.254.169.254/latest/meta-data/instance-id`\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd login softnas $ID -t\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd ackagreement -t\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd diskmgmt createEBSdisk sizeMaxValue=1024 type=gp2 numberDisks=1 deleteOnTermination sync_creation -t\n",
+                        "  - /usr/local/bin/softnas-cmd createpool /dev/nvme1n1 -n=EBSpool -r=0 -f=on -t\n",
+                        "  - /usr/local/bin/softnas-cmd createvolume vol_name=EBSvol pool=EBSpool vol_type=filesystem provisioning=thin exportNFS=on shareCIFS=on dedup=off enable_snapshot=off sync=standard -t\n",
+                        "  - timeStamp=`/bin/date +%T`\n",
+                        "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=CompletionTime,Value=$timeStamp --region ",{"Ref":"MyRegion"},"\n",
+                        "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=Status,Value='Configuration Complete' --region ",{"Ref":"MyRegion"},"\n",
+                        "  - echo '#!/bin/bash' >> /root/labelDevs.sh\n",
+                        "  - echo 'export HOSTNAME=$(hostname)' >> /root/labelDevs.sh\n",
+                        "  - echo 'export myRegion=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed s/.$//)' >> /root/labelDevs.sh\n",
+                        "  - echo 'export instanceId=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/instance-id)' >> /root/labelDevs.sh\n",
+                        "  - echo 'declare -a ebsIds=($(aws ec2 describe-instances --instance-ids=$instanceId --region=$myRegion --query 'Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId' --output=text))' >> /root/labelDevs.sh\n",
+                        "  - echo 'for ebsVol in ${ebsIds[@]}' >> /root/labelDevs.sh\n",
+                        "  - echo 'do' >> /root/labelDevs.sh\n",
+                        "  - echo '  deviceName=$(aws ec2 describe-volumes --region $myRegion --volume-ids $ebsVol --query 'Volumes[].Attachments[].Device' --output text)' >> /root/labelDevs.sh\n",
+                        "  - echo '  aws ec2 create-tags --resources $ebsVol --tags Key=Name,Value=$HOSTNAME:$deviceName --region $myRegion' >> /root/labelDevs.sh\n",
+                        "  - echo 'done' >> /root/labelDevs.sh\n",
+                        "  - chmod 0755 /root/labelDevs.sh\n",
+                        "  - /bin/bash /root/labelDevs.sh\n"
+                        ] ]
+                    }
+                  }
+              }
+          },
+
+    "NAS10TB" : {
+      "Type" : "AWS::EC2::Instance",
+      "Condition": "Create10TB",
+      "Properties" : {
+        "InstanceType" : { "Ref" : "NasType" },
+        "KeyName" : { "Ref": "KeyName" },
+        "ImageId" : { "Ref": "SoftnasAMI" },
+        "EbsOptimized" : "true",
+        "IamInstanceProfile": "SoftNAS_HA_IAM",
+        "DisableApiTermination": "false",
+        "NetworkInterfaces" : [ { "NetworkInterfaceId" : {"Ref" : "Nas1eth0"}, "DeviceIndex" : "0" } ],
+        "Tags" : [
+          { "Key" : "Name",
+          "Value" : { "Fn::Join" : ["-",[ {"Ref": "Prefix"}, "01" ] ] } },
+          { "Key" : "Status", "Value" : "Configuration in progress" }
+        ],
+        "BlockDeviceMappings":[
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": { "VolumeSize": "100", "VolumeType": "gp2" }
+        }
+        ],
+        "UserData": {
+                    "Fn::Base64": { "Fn::Join": ["", [
+                        "#cloud-config\n",
+                        "hostname: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                        "fqdn: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                        "manage_etc_hosts: false\n",
+                        "runcmd:\n",
+                        "  - echo 'export HOSTNAME=",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"' >> /root/.bash_profile\n",
+                        "  - sed -i -e 's/admin@example.com/",{"Ref": "AlertEmail"},"/g' /var/www/softnas/config/monitoring.ini\n",
+                        "  - cp -a /var/www/softnas/config/general_settings.ini.prototype /var/www/softnas/config/general_settings.ini\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service monit restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service nginx restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service php-fpm restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service sshd restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service softnas restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - ID=`/usr/bin/curl http://169.254.169.254/latest/meta-data/instance-id`\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd login softnas $ID -t\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd ackagreement -t\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd diskmgmt createEBSdisk sizeMaxValue=10240 type=gp2 numberDisks=1 deleteOnTermination sync_creation -t\n",
+                        "  - /usr/local/bin/softnas-cmd createpool /dev/nvme1n1 -n=EBSpool -r=0 -f=on -t\n",
+                        "  - /usr/local/bin/softnas-cmd createvolume vol_name=EBSvol pool=EBSpool vol_type=filesystem provisioning=thin exportNFS=on shareCIFS=on dedup=off enable_snapshot=off sync=standard -t\n",
+                        "  - timeStamp=`/bin/date +%T`\n",
+                        "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=CompletionTime,Value=$timeStamp --region ",{"Ref":"MyRegion"},"\n",
+                        "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=Status,Value='Configuration Complete' --region ",{"Ref":"MyRegion"},"\n",
+                        "  - echo '#!/bin/bash' >> /root/labelDevs.sh\n",
+                        "  - echo 'export HOSTNAME=$(hostname)' >> /root/labelDevs.sh\n",
+                        "  - echo 'export myRegion=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed s/.$//)' >> /root/labelDevs.sh\n",
+                        "  - echo 'export instanceId=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/instance-id)' >> /root/labelDevs.sh\n",
+                        "  - echo 'declare -a ebsIds=($(aws ec2 describe-instances --instance-ids=$instanceId --region=$myRegion --query 'Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId' --output=text))' >> /root/labelDevs.sh\n",
+                        "  - echo 'for ebsVol in ${ebsIds[@]}' >> /root/labelDevs.sh\n",
+                        "  - echo 'do' >> /root/labelDevs.sh\n",
+                        "  - echo '  deviceName=$(aws ec2 describe-volumes --region $myRegion --volume-ids $ebsVol --query 'Volumes[].Attachments[].Device' --output text)' >> /root/labelDevs.sh\n",
+                        "  - echo '  aws ec2 create-tags --resources $ebsVol --tags Key=Name,Value=$HOSTNAME:$deviceName --region $myRegion' >> /root/labelDevs.sh\n",
+                        "  - echo 'done' >> /root/labelDevs.sh\n",
+                        "  - chmod 0755 /root/labelDevs.sh\n",
+                        "  - /bin/bash /root/labelDevs.sh\n"
+                        ] ]
+                  }
+              }
+            }
+          },
+
+    "NAS20TB" : {
+      "Type" : "AWS::EC2::Instance",
+      "Condition": "Create20TB",
+      "Properties" : {
+        "InstanceType" : { "Ref" : "NasType" },
+        "KeyName" : { "Ref": "KeyName" },
+        "ImageId" : { "Ref": "SoftnasAMI" },
+        "EbsOptimized" : "true",
+        "IamInstanceProfile": "SoftNAS_HA_IAM",
+        "DisableApiTermination": "false",
+        "NetworkInterfaces" : [ { "NetworkInterfaceId" : {"Ref" : "Nas1eth0"}, "DeviceIndex" : "0" } ],
+        "Tags" : [
+          { "Key" : "Name",
+          "Value" : { "Fn::Join" : ["-",[ {"Ref": "Prefix"}, "01" ] ] } },
+          { "Key" : "Status", "Value" : "Configuration in progress" }
+        ],
+        "BlockDeviceMappings":[
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": { "VolumeSize": "100", "VolumeType": "gp2" }
+        }
+        ],
+        "UserData": {
+                    "Fn::Base64": { "Fn::Join": ["", [
+                        "#cloud-config\n",
+                        "hostname: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                        "fqdn: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                        "manage_etc_hosts: false\n",
+                        "runcmd:\n",
+                        "  - echo 'export HOSTNAME=",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"' >> /root/.bash_profile\n",
+                        "  - sed -i -e 's/admin@example.com/",{"Ref": "AlertEmail"},"/g' /var/www/softnas/config/monitoring.ini\n",
+                        "  - cp -a /var/www/softnas/config/general_settings.ini.prototype /var/www/softnas/config/general_settings.ini\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service monit restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service nginx restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service php-fpm restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service sshd restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - service softnas restart\n",
+                        "  - /bin/sleep 5\n",
+                        "  - ID=`/usr/bin/curl http://169.254.169.254/latest/meta-data/instance-id`\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd login softnas $ID -t\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd ackagreement -t\n",
+                        "  - /bin/sleep 5\n",
+                        "  - /usr/local/bin/softnas-cmd diskmgmt createEBSdisk sizeMaxValue=10240 type=gp2 numberDisks=2 deleteOnTermination sync_creation -t\n",
+                        "  - /usr/local/bin/softnas-cmd createpool /dev/nvme1n1:/dev/nvme2n1 -n=EBSpool -r=0 -f=on -t\n",
+                        "  - /usr/local/bin/softnas-cmd createvolume vol_name=EBSvol pool=EBSpool vol_type=filesystem provisioning=thin exportNFS=on shareCIFS=on dedup=off enable_snapshot=off sync=standard -t\n",
+                        "  - timeStamp=`/bin/date +%T`\n",
+                        "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=CompletionTime,Value=$timeStamp --region ",{"Ref":"MyRegion"},"\n",
+                        "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=Status,Value='Configuration Complete' --region ",{"Ref":"MyRegion"},"\n",
+                        "  - echo '#!/bin/bash' >> /root/labelDevs.sh\n",
+                        "  - echo 'export HOSTNAME=$(hostname)' >> /root/labelDevs.sh\n",
+                        "  - echo 'export myRegion=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed s/.$//)' >> /root/labelDevs.sh\n",
+                        "  - echo 'export instanceId=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/instance-id)' >> /root/labelDevs.sh\n",
+                        "  - echo 'declare -a ebsIds=($(aws ec2 describe-instances --instance-ids=$instanceId --region=$myRegion --query 'Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId' --output=text))' >> /root/labelDevs.sh\n",
+                        "  - echo 'for ebsVol in ${ebsIds[@]}' >> /root/labelDevs.sh\n",
+                        "  - echo 'do' >> /root/labelDevs.sh\n",
+                        "  - echo '  deviceName=$(aws ec2 describe-volumes --region $myRegion --volume-ids $ebsVol --query 'Volumes[].Attachments[].Device' --output text)' >> /root/labelDevs.sh\n",
+                        "  - echo '  aws ec2 create-tags --resources $ebsVol --tags Key=Name,Value=$HOSTNAME:$deviceName --region $myRegion' >> /root/labelDevs.sh\n",
+                        "  - echo 'done' >> /root/labelDevs.sh\n",
+                        "  - chmod 0755 /root/labelDevs.sh\n",
+                        "  - /bin/bash /root/labelDevs.sh\n"
+                        ] ]
+                  }
+              }
+            }
+          },
+
+          "NAS50TB" : {
+            "Type" : "AWS::EC2::Instance",
+            "Condition": "Create50TB",
+            "Properties" : {
+              "InstanceType" : { "Ref" : "NasType" },
+              "KeyName" : { "Ref": "KeyName" },
+              "ImageId" : { "Ref": "SoftnasAMI" },
+              "EbsOptimized" : "true",
+              "IamInstanceProfile": "SoftNAS_HA_IAM",
+              "DisableApiTermination": "false",
+              "NetworkInterfaces" : [ { "NetworkInterfaceId" : {"Ref" : "Nas1eth0"}, "DeviceIndex" : "0" } ],
+              "Tags" : [
+                { "Key" : "Name",
+                "Value" : { "Fn::Join" : ["-",[ {"Ref": "Prefix"}, "01" ] ] } },
+                { "Key" : "Status", "Value" : "Configuration in progress" }
+              ],
+              "BlockDeviceMappings":[
+              {
+                "DeviceName": "/dev/sda1",
+                "Ebs": { "VolumeSize": "100", "VolumeType": "gp2" }
+              }
+              ],
+              "UserData": {
+                          "Fn::Base64": { "Fn::Join": ["", [
+                              "#cloud-config\n",
+                              "hostname: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                              "fqdn: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
+                              "manage_etc_hosts: false\n",
+                              "runcmd:\n",
+                              "  - echo 'export HOSTNAME=",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"' >> /root/.bash_profile\n",
+                              "  - sed -i -e 's/admin@example.com/",{"Ref": "AlertEmail"},"/g' /var/www/softnas/config/monitoring.ini\n",
+                              "  - cp -a /var/www/softnas/config/general_settings.ini.prototype /var/www/softnas/config/general_settings.ini\n",
+                              "  - /bin/sleep 5\n",
+                              "  - service monit restart\n",
+                              "  - /bin/sleep 5\n",
+                              "  - service nginx restart\n",
+                              "  - /bin/sleep 5\n",
+                              "  - service php-fpm restart\n",
+                              "  - /bin/sleep 5\n",
+                              "  - service sshd restart\n",
+                              "  - /bin/sleep 5\n",
+                              "  - service softnas restart\n",
+                              "  - /bin/sleep 5\n",
+                              "  - ID=`/usr/bin/curl http://169.254.169.254/latest/meta-data/instance-id`\n",
+                              "  - /bin/sleep 5\n",
+                              "  - /usr/local/bin/softnas-cmd login softnas $ID -t\n",
+                              "  - /bin/sleep 5\n",
+                              "  - /usr/local/bin/softnas-cmd ackagreement -t\n",
+                              "  - /bin/sleep 5\n",
+                              "  - /usr/local/bin/softnas-cmd diskmgmt createEBSdisk sizeMaxValue=10240 type=gp2 numberDisks=5 deleteOnTermination sync_creation -t\n",
+                              "  - /usr/local/bin/softnas-cmd createpool /dev/nvme1n1:/dev/nvme2n1:/dev/nvme3n1:/dev/nvme4n1:/dev/nvme5n1 -n=EBSpool -r=0 -f=on -t\n",
+                              "  - /usr/local/bin/softnas-cmd createvolume vol_name=EBSvol pool=EBSpool vol_type=filesystem provisioning=thin exportNFS=on shareCIFS=on dedup=off enable_snapshot=off sync=standard -t\n",
+                              "  - timeStamp=`/bin/date +%T`\n",
+                              "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=CompletionTime,Value=$timeStamp --region ",{"Ref":"MyRegion"},"\n",
+                              "  - /usr/bin/aws ec2 create-tags --resources $ID --tags Key=Status,Value='Configuration Complete' --region ",{"Ref":"MyRegion"},"\n",
+                              "  - echo '#!/bin/bash' >> /root/labelDevs.sh\n",
+                              "  - echo 'export HOSTNAME=$(hostname)' >> /root/labelDevs.sh\n",
+                              "  - echo 'export myRegion=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed s/.$//)' >> /root/labelDevs.sh\n",
+                              "  - echo 'export instanceId=$(/usr/bin/curl -s http://169.254.169.254/latest/meta-data/instance-id)' >> /root/labelDevs.sh\n",
+                              "  - echo 'declare -a ebsIds=($(aws ec2 describe-instances --instance-ids=$instanceId --region=$myRegion --query 'Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId' --output=text))' >> /root/labelDevs.sh\n",
+                              "  - echo 'for ebsVol in ${ebsIds[@]}' >> /root/labelDevs.sh\n",
+                              "  - echo 'do' >> /root/labelDevs.sh\n",
+                              "  - echo '  deviceName=$(aws ec2 describe-volumes --region $myRegion --volume-ids $ebsVol --query 'Volumes[].Attachments[].Device' --output text)' >> /root/labelDevs.sh\n",
+                              "  - echo '  aws ec2 create-tags --resources $ebsVol --tags Key=Name,Value=$HOSTNAME:$deviceName --region $myRegion' >> /root/labelDevs.sh\n",
+                              "  - echo 'done' >> /root/labelDevs.sh\n",
+                              "  - chmod 0755 /root/labelDevs.sh\n",
+                              "  - /bin/bash /root/labelDevs.sh\n"
+                              ] ]
+                        }
+                    }
+                  }
+                }
+              },
+
+  "Outputs" : {
+    "softnas1PrivateIp1TB" : {
+      "Condition": "Create1TB",
+      "Description" : "SoftNAS-01 Address",
+      "Value" : {
+        "Fn::GetAtt" : [
+          "NAS1TB",
+          "PrivateIp"
+          ]
+        }
+      },
+
+    "softnas1Password1TB" : {
+      "Condition": "Create1TB",
+      "Description" : "SoftNAS-01 Password",
+      "Value" : { "Ref" : "NAS1TB" }
+    },
+
+    "softnas1PrivateIp10TB" : {
+      "Condition": "Create10TB",
+      "Description" : "SoftNAS-01 Address",
+      "Value" : {
+        "Fn::GetAtt" : [
+          "NAS10TB",
+          "PrivateIp"
+          ]
+        }
+      },
+
+    "softnas1Password10TB" : {
+      "Condition": "Create10TB",
+      "Description" : "SoftNAS-01 Password",
+      "Value" : { "Ref" : "NAS10TB" }
+    },
+
+    "softnas1PrivateIp20TB" : {
+      "Condition": "Create20TB",
+      "Description" : "SoftNAS-01 Address",
+      "Value" : {
+        "Fn::GetAtt" : [
+          "NAS20TB",
+          "PrivateIp"
+          ]
+        }
+      },
+
+    "softnas1Password20TB" : {
+      "Condition": "Create20TB",
+      "Description" : "SoftNAS-01 Password",
+      "Value" : { "Ref" : "NAS20TB" }
+    },
+
+    "softnas1PrivateIp50TB" : {
+      "Condition": "Create50TB",
+      "Description" : "SoftNAS-01 Address",
+      "Value" : {
+        "Fn::GetAtt" : [
+          "NAS50TB",
+          "PrivateIp"
+          ]
+        }
+      },
+
+    "softnas1Password50TB" : {
+      "Condition": "Create50TB",
+      "Description" : "SoftNAS-01 Password",
+      "Value" : { "Ref" : "NAS50TB" }
+    },
+
+    "nfsPath1TB": {
+      "Condition": "Create1TB",
+      "Description" : "Network mount point for NFS",
+      "Value" : {
+        "Fn::Join": [
+          ":", [{"Fn::GetAtt" : [ "NAS1TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+          ]
+        }
+      },
+
+    "cifsPath1TB": {
+      "Condition": "Create1TB",
+      "Description": "Network mount point for CIFS",
+      "Value": {
+        "Fn::Join": [
+          "", ["//", {"Fn::GetAtt" : [ "NAS1TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+          ]
+        }
+      },
+
+      "nfsPath10TB": {
+        "Condition": "Create10TB",
+        "Description" : "Network mount point for NFS",
+        "Value" : {
+          "Fn::Join": [
+            ":", [{"Fn::GetAtt" : [ "NAS10TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+            ]
+          }
+        },
+
+      "cifsPath10TB": {
+        "Condition": "Create10TB",
+        "Description": "Network mount point for CIFS",
+        "Value": {
+          "Fn::Join": [
+            "", ["//", {"Fn::GetAtt" : [ "NAS10TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+            ]
+          }
+        },
+
+        "nfsPath20TB": {
+          "Condition": "Create20TB",
+          "Description" : "Network mount point for NFS",
+          "Value" : {
+            "Fn::Join": [
+              ":", [{"Fn::GetAtt" : [ "NAS20TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+              ]
+            }
+          },
+
+        "cifsPath20TB": {
+          "Condition": "Create20TB",
+          "Description": "Network mount point for CIFS",
+          "Value": {
+            "Fn::Join": [
+              "", ["//", {"Fn::GetAtt" : [ "NAS20TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+              ]
+            }
+          },
+
+          "nfsPath50TB": {
+            "Condition": "Create50TB",
+            "Description" : "Network mount point for NFS",
+            "Value" : {
+              "Fn::Join": [
+                ":", [{"Fn::GetAtt" : [ "NAS50TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+                ]
+              }
+            },
+
+          "cifsPath50TB": {
+            "Condition": "Create50TB",
+            "Description": "Network mount point for CIFS",
+            "Value": {
+              "Fn::Join": [
+                "", ["//", {"Fn::GetAtt" : [ "NAS50TB", "PrivateIp" ]}, "/EBSpool/EBSvol"]
+                ]
+              }
+            }
+      }
+  }
