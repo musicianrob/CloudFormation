@@ -1,2 +1,2 @@
 # CloudFormation
-CloudFormation Template Example for Launching SoftNAS
+CloudFormation Template Examples for Launching SoftNAS
