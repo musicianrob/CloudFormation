@@ -64,5 +64,5 @@ aws cloudformation create-stack --region us-west-2 --stack-name $name --template
  ParameterKey=Prefix,ParameterValue="$name"
 ```
 
-Reach out to softNAS support if you have any questions
+Reach out to Buurst support if you have any questions
 
