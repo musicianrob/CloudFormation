@@ -1,7 +1,7 @@
 # CloudFormation
 ## CloudFormation Template Examples for Launching SoftNAS
 
-Ther is a template for a single instance and a template for HA pair. The required parameters used in the template are located at the top of the JSON inside the ```Parameters {}``` section. Most values are empty. You can either define them as the defaults in the parameters section or pass them in at template creation time using the aws cli. You can also use the CloudFormation console in AWS to upload the JSON and visually edit the parameters and launch from there.
+There are two templates. One is a template for a single instance and the other template is for HA pair. The required parameters used in the template are located at the top of the JSON inside the ```Parameters {}``` section. Most values are empty. You can either define them as the defaults in the parameters section or pass them in at template creation time using the aws cli. You can also use the CloudFormation console in AWS to upload the JSON and visually edit the parameters and launch from there.
 
 Once the template launch completes you can browse to the private IP of the instance via  HTTPS and log in. The default password to log into the SoftNAS instance Web UI will be the instance-id. The default username will be 'softnas'
 
