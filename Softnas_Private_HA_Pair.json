@@ -805,8 +805,6 @@
                   "fqdn: ",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "01" ] ] },"\n",
                   "manage_etc_hosts: false\n",
                   "runcmd:\n",
-                  "  - /usr/bin/curl -s https://install-acpid.s3.us-east-2.amazonaws.com/install_acpid.sh | /bin/bash\n",
-                  "  - /bin/sleep 5\n",
                   "  - echo 'export HOSTNAME=",{"Fn::Join": ["-",[ {"Ref": "Prefix"}, "02" ] ] },"' >> /root/.bash_profile\n",
                   "  - sed -i -e 's/admin@example.com/",{"Ref": "AlertEmail"},"/g' /var/www/softnas/config/monitoring.ini\n",
                   "  - cp -a /var/www/softnas/config/general_settings.ini.prototype /var/www/softnas/config/general_settings.ini\n",
