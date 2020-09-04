@@ -36,7 +36,7 @@
     },
 
     "SoftnasAMI" : {
-        "Description" : "Description": "AMI-ID: Use the SoftNAS Product AMI for your region",
+        "Description" : "AMI-ID: Use the SoftNAS Product AMI for your region",
         "Type" : "String",
         "Default" : ""
     },
